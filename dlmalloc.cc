@@ -2502,6 +2502,16 @@ typedef malloc_segment* msegmentptr;
 
 // ===============================================================================
 struct malloc_params {
+    malloc_params() : magic(0) {}
+
+    void ensure_initialization()
+    {
+        if (!magic)
+            _init();
+    }
+    int change(int param_number, int value);
+    int _init();
+
     size_t magic;
     size_t page_size;
     size_t granularity;
@@ -2650,13 +2660,13 @@ public:
     /* -------------------------- system alloc setup (Operations on mflags) ----- */
     bool      use_lock() const { return !!(mflags & USE_LOCK_BIT); }
     void      enable_lock()    { mflags |=  USE_LOCK_BIT; }
-    void      set_lock(int l) {
+    void      set_lock(int l)  {
         mflags = l ? mflags | USE_LOCK_BIT : mflags & ~USE_LOCK_BIT;
     }
 
 #if USE_LOCKS
     void      disable_lock()   { mflags &= ~USE_LOCK_BIT; }
-    MLOCK_T&  get_mutex()  { return mutex; }
+    MLOCK_T&  get_mutex()      { return mutex; }
 #else
     void      disable_lock()   {}
 #endif
@@ -2701,7 +2711,7 @@ public:
 
 #if !INSECURE
     // Check if address a is at least as high as any from MORECORE or MMAP
-    bool        ok_address(void *a) const        { return (char *)a >= least_addr; }
+    bool        ok_address(void *a) const { return (char *)a >= least_addr; }
 
     // Check if address of next chunk n is higher than base chunk p
     static bool ok_next(void *p, void *n) { return p < n; }
@@ -2713,13 +2723,13 @@ public:
     static bool ok_pinuse(mchunkptr p)    { return p->pinuse(); }
 
     // Check if (alleged) mstate m has expected magic field
-    bool        ok_magic() const                 { return magic == mparams.magic; }
+    bool        ok_magic() const          { return magic == mparams.magic; }
     
     // In gcc, use __builtin_expect to minimize impact of checks
     #if defined(__GNUC__) && __GNUC__ >= 3
-        static bool rtcheck(bool e)  { return __builtin_expect(e, 1); }
+        static bool rtcheck(bool e)       { return __builtin_expect(e, 1); }
     #else
-        static bool rtcheck(bool e)  { return e; }
+        static bool rtcheck(bool e)       { return e; }
     #endif
 #else
     static bool ok_address(void *a)       { return true; }
@@ -2730,10 +2740,10 @@ public:
     static bool rtcheck(bool e)           { return true; }
 #endif
 
-    bool is_initialized() const { return top != 0; }
+    bool is_initialized() const           { return top != 0; }
 
-    bool use_noncontiguous()  const { return !!(mflags & USE_NONCONTIGUOUS_BIT); }
-    void disable_contiguous() { mflags |=  USE_NONCONTIGUOUS_BIT; }
+    bool use_noncontiguous()  const       { return !!(mflags & USE_NONCONTIGUOUS_BIT); }
+    void disable_contiguous()             { mflags |=  USE_NONCONTIGUOUS_BIT; }
 
     // Return segment holding given address
     msegmentptr segment_holding(char* addr) const {
@@ -2767,12 +2777,12 @@ public:
     /* -------------------------- Debugging setup ---------------------------- */
 
 #if ! DEBUG
-    void check_free_chunk(mchunkptr p) {}
-    void check_inuse_chunk(mchunkptr p) {}
-    void check_malloced_chunk(void* p, size_t s) {}
-    void check_mmapped_chunk(mchunkptr p) {}
+    void check_free_chunk(mchunkptr) {}
+    void check_inuse_chunk(mchunkptr) {}
+    void check_malloced_chunk(void* , size_t) {}
+    void check_mmapped_chunk(mchunkptr) {}
     void check_malloc_state() {}
-    void check_top_chunk(mchunkptr p) {}
+    void check_top_chunk(mchunkptr) {}
 #else /* DEBUG */
     void check_free_chunk(mchunkptr p)       { do_check_free_chunk(p); }
     void check_inuse_chunk(mchunkptr p)      { do_check_inuse_chunk(p); }
@@ -2929,7 +2939,7 @@ private:
 
     /* ------------------------ Set up inuse chunks with or without footers ---*/
 #if !FOOTERS
-    void mark_inuse_foot(malloc_chunk_header *p, size_t s) {}
+    void mark_inuse_foot(malloc_chunk_header *, size_t) {}
 #else 
     //Set foot of inuse chunk to be xor of mstate and seed 
     void  mark_inuse_foot(malloc_chunk_header *p, size_t s) {
@@ -3047,9 +3057,6 @@ typedef malloc_state*    mstate;
 
 /* ------------- Global malloc_state ------------------- */
 
-// Ensure mparams initialized
-#define ensure_initialization() (void)(mparams.magic != 0 || init_mparams())
-
 #if !ONLY_MSPACES
 
 // The global malloc_state used for all non-"mspace" calls
@@ -3161,14 +3168,14 @@ bool segment_holds(msegmentptr S, mchunkptr A) {
 #endif // LOCK_AT_FORK
 
 // Initialize mparams
-static int init_mparams(void) {
+int malloc_params::_init() {
 #ifdef NEED_GLOBAL_LOCK_INIT
     if (malloc_global_mutex_status <= 0)
         init_malloc_global_mutex();
 #endif
 
     ACQUIRE_MALLOC_GLOBAL_LOCK();
-    if (mparams.magic == 0) {
+    if (magic == 0) {
         size_t magic;
         size_t psize;
         size_t gsize;
@@ -3201,19 +3208,19 @@ static int init_mparams(void) {
             ((gsize            & (gsize-1))            != 0) ||
             ((psize            & (psize-1))            != 0))
             ABORT;
-        mparams.granularity = gsize;
-        mparams.page_size = psize;
-        mparams.mmap_threshold = DEFAULT_MMAP_THRESHOLD;
-        mparams.trim_threshold = DEFAULT_TRIM_THRESHOLD;
+        granularity = gsize;
+        page_size = psize;
+        mmap_threshold = DEFAULT_MMAP_THRESHOLD;
+        trim_threshold = DEFAULT_TRIM_THRESHOLD;
 #if MORECORE_CONTIGUOUS
-        mparams.default_mflags = USE_LOCK_BIT | USE_MMAP_BIT;
+        default_mflags = USE_LOCK_BIT | USE_MMAP_BIT;
 #else  // MORECORE_CONTIGUOUS
-        mparams.default_mflags = USE_LOCK_BIT | USE_MMAP_BIT | USE_NONCONTIGUOUS_BIT;
+        default_mflags = USE_LOCK_BIT | USE_MMAP_BIT | USE_NONCONTIGUOUS_BIT;
 #endif // MORECORE_CONTIGUOUS
 
 #if !ONLY_MSPACES
         // Set up lock for main malloc area
-        gm->mflags = mparams.default_mflags;
+        gm->mflags = default_mflags;
         (void)INITIAL_LOCK(&gm->get_mutex());
 #endif
 #if LOCK_AT_FORK
@@ -3244,7 +3251,7 @@ static int init_mparams(void) {
             magic |= (size_t)8U;    // ensure nonzero
             magic &= ~(size_t)7U;   // improve chances of fault for bad values
             // Until memory modes commonly available, use volatile-write
-            (*(volatile size_t *)(&(mparams.magic))) = magic;
+            (*(volatile size_t *)(&(magic))) = magic;
         }
     }
 
@@ -3253,23 +3260,23 @@ static int init_mparams(void) {
 }
 
 // support for mallopt
-static int change_mparam(int param_number, int value) {
+int malloc_params::change(int param_number, int value) {
     size_t val;
     ensure_initialization();
     val = (value == -1)? MAX_SIZE_T : (size_t)value;
     switch(param_number) {
     case M_TRIM_THRESHOLD:
-        mparams.trim_threshold = val;
+        trim_threshold = val;
         return 1;
     case M_GRANULARITY:
-        if (val >= mparams.page_size && ((val & (val - 1)) == 0)) {
-            mparams.granularity = val;
+        if (val >= page_size && ((val & (val - 1)) == 0)) {
+            granularity = val;
             return 1;
         }
         else
             return 0;
     case M_MMAP_THRESHOLD:
-        mparams.mmap_threshold = val;
+        mmap_threshold = val;
         return 1;
     default:
         return 0;
@@ -3552,7 +3559,7 @@ void malloc_state::do_check_malloc_state() {
 // ===============================================================================
 struct mallinfo malloc_state::internal_mallinfo() {
     struct mallinfo nm = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    ensure_initialization();
+    mparams.ensure_initialization();
     if (!PREACTION(this)) {
         check_malloc_state();
         if (is_initialized()) {
@@ -3592,7 +3599,7 @@ struct mallinfo malloc_state::internal_mallinfo() {
 
 #if !NO_MALLOC_STATS
 void malloc_state::internal_malloc_stats() {
-    ensure_initialization();
+    mparams.ensure_initialization();
     if (!PREACTION(this)) {
         size_t maxfp = 0;
         size_t fp = 0;
@@ -4114,7 +4121,7 @@ void* malloc_state::sys_alloc(size_t nb) {
     flag_t mmap_flag = 0;
     size_t asize; // allocation size
 
-    ensure_initialization();
+    mparams.ensure_initialization();
 
     // Directly map large chunks, but only if already initialized
     if (use_mmap() && nb >= mparams.mmap_threshold && topsize != 0) {
@@ -4379,7 +4386,7 @@ size_t malloc_state::release_unused_segments() {
 
 int malloc_state::sys_trim(size_t pad) {
     size_t released = 0;
-    ensure_initialization();
+    mparams.ensure_initialization();
     if (pad < MAX_REQUEST && is_initialized()) {
         pad += TOP_FOOT_SIZE; // ensure enough room for segment overhead
 
@@ -4654,7 +4661,7 @@ void* dlmalloc(size_t bytes) {
     */
 
 #if USE_LOCKS
-    ensure_initialization(); // initialize in sys_alloc if not using locks
+    mparams.ensure_initialization(); // initialize in sys_alloc if not using locks
 #endif
     return gm->_malloc(bytes);
 }
@@ -5088,7 +5095,7 @@ void** malloc_state::ialloc(size_t n_elements, size_t* sizes, int opts,
     size_t    size;
     size_t    i;
 
-    ensure_initialization();
+    mparams.ensure_initialization();
     // compute array length, if needed 
     if (chunks != 0) {
         if (n_elements == 0)
@@ -5410,14 +5417,14 @@ int dlposix_memalign(void** pp, size_t alignment, size_t bytes) {
 
 void* dlvalloc(size_t bytes) {
     size_t pagesz;
-    ensure_initialization();
+    mparams.ensure_initialization();
     pagesz = mparams.page_size;
     return dlmemalign(pagesz, bytes);
 }
 
 void* dlpvalloc(size_t bytes) {
     size_t pagesz;
-    ensure_initialization();
+    mparams.ensure_initialization();
     pagesz = mparams.page_size;
     return dlmemalign(pagesz, (bytes + pagesz - 1) & ~(pagesz - 1));
 }
@@ -5443,7 +5450,7 @@ void dlmalloc_inspect_all(void(*handler)(void *start,
                                          size_t used_bytes,
                                          void* callback_arg),
                           void* arg) {
-    ensure_initialization();
+    mparams.ensure_initialization();
     if (!PREACTION(gm)) {
         internal_inspect_all(gm, handler, arg);
         POSTACTION(gm);
@@ -5453,7 +5460,7 @@ void dlmalloc_inspect_all(void(*handler)(void *start,
 
 int dlmalloc_trim(size_t pad) {
     int result = 0;
-    ensure_initialization();
+    mparams.ensure_initialization();
     if (!PREACTION(gm)) {
         result = gm->sys_trim(pad);
         POSTACTION(gm);
@@ -5498,7 +5505,7 @@ void dlmalloc_stats() {
 #endif 
 
 int dlmallopt(int param_number, int value) {
-    return change_mparam(param_number, value);
+    return mparams.change(param_number, value);
 }
 
 size_t dlmalloc_usable_size(void* mem) {
@@ -5531,7 +5538,7 @@ static mstate init_user_mstate(char* tbase, size_t tsize) {
 mspace create_mspace(size_t capacity, int locked) {
     mstate m = 0;
     size_t msize;
-    ensure_initialization();
+    mparams.ensure_initialization();
     msize = pad_request(sizeof(malloc_state));
     if (capacity < (size_t) -(msize + TOP_FOOT_SIZE + mparams.page_size)) {
         size_t rs = ((capacity == 0)? mparams.granularity :
@@ -5550,7 +5557,7 @@ mspace create_mspace(size_t capacity, int locked) {
 mspace create_mspace_with_base(void* base, size_t capacity, int locked) {
     mstate m = 0;
     size_t msize;
-    ensure_initialization();
+    mparams.ensure_initialization();
     msize = pad_request(sizeof(malloc_state));
     if (capacity > msize + TOP_FOOT_SIZE &&
         capacity < (size_t) -(msize + TOP_FOOT_SIZE + mparams.page_size)) {
@@ -5883,7 +5890,7 @@ size_t mspace_usable_size(const void* mem) {
 }
 
 int mspace_mallopt(int param_number, int value) {
-    return change_mparam(param_number, value);
+    return mparams.change(param_number, value);
 }
 
 #endif // MSPACES
