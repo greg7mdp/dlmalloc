@@ -584,8 +584,14 @@ MAX_RELEASE_CHECK_RATE   default: 4095 unless not HAVE_MMAP
 #endif  /* HAVE_MORECORE */
 #endif  /* DARWIN */
 
+#if defined __cplusplus && (__GNUC__ >= 3 || __GNUC_MINOR__ >= 8) && !defined(__CYGWIN__)
+    #define DLTHROW	throw ()
+#else
+    #define DLTHROW
+#endif
+
 #ifndef LACKS_SYS_TYPES_H
-#include <sys/types.h>  /* For size_t */
+    #include <sys/types.h>  /* For size_t */
 #endif  /* LACKS_SYS_TYPES_H */
 
 /* The maximum possible size_t value has all bits set */
@@ -651,7 +657,9 @@ MAX_RELEASE_CHECK_RATE   default: 4095 unless not HAVE_MMAP
 #ifndef HAVE_MREMAP
 #ifdef linux
 #define HAVE_MREMAP 1
-#define _GNU_SOURCE /* Turns on mremap() definition */
+#ifndef _GNU_SOURCE
+    #define _GNU_SOURCE /* Turns on mremap() definition */
+#endif
 #else   /* linux */
 #define HAVE_MREMAP 0
 #endif  /* linux */
@@ -852,7 +860,7 @@ extern "C" {
   maximum supported value of n differs across systems, but is in all
   cases less than the maximum representable value of a size_t.
 */
-DLMALLOC_EXPORT void* dlmalloc(size_t);
+DLMALLOC_EXPORT void* dlmalloc(size_t) DLTHROW;
 
 /*
   free(void* p)
@@ -861,14 +869,14 @@ DLMALLOC_EXPORT void* dlmalloc(size_t);
   It has no effect if p is null. If p was not malloced or already
   freed, free(p) will by default cause the current program to abort.
 */
-DLMALLOC_EXPORT void  dlfree(void*);
+DLMALLOC_EXPORT void  dlfree(void*) DLTHROW;
 
 /*
   calloc(size_t n_elements, size_t element_size);
   Returns a pointer to n_elements * element_size bytes, with all locations
   set to zero.
 */
-DLMALLOC_EXPORT void* dlcalloc(size_t, size_t);
+DLMALLOC_EXPORT void* dlcalloc(size_t, size_t) DLTHROW;
 
 /*
   realloc(void* p, size_t n)
@@ -892,7 +900,7 @@ DLMALLOC_EXPORT void* dlcalloc(size_t, size_t);
   The old unix realloc convention of allowing the last-free'd chunk
   to be used as an argument to realloc is not supported.
 */
-DLMALLOC_EXPORT void* dlrealloc(void*, size_t);
+DLMALLOC_EXPORT void* dlrealloc(void*, size_t) DLTHROW;
 
 /*
   realloc_in_place(void* p, size_t n)
@@ -931,14 +939,14 @@ DLMALLOC_EXPORT void* dlmemalign(size_t, size_t);
   returns EINVAL if the alignment is not a power of two (3) fails and
   returns ENOMEM if memory cannot be allocated.
 */
-DLMALLOC_EXPORT int dlposix_memalign(void**, size_t, size_t);
+DLMALLOC_EXPORT int dlposix_memalign(void**, size_t, size_t) DLTHROW;
 
 /*
   valloc(size_t n);
   Equivalent to memalign(pagesize, n), where pagesize is the page
   size of the system. If the pagesize is unknown, 4096 is used.
 */
-DLMALLOC_EXPORT void* dlvalloc(size_t);
+DLMALLOC_EXPORT void* dlvalloc(size_t) DLTHROW;
 
 /*
   mallopt(int parameter_number, int parameter_value)
@@ -4638,7 +4646,7 @@ void* malloc_state::tmalloc_small(size_t nb) {
 
 #if !ONLY_MSPACES
 
-void* dlmalloc(size_t bytes) {
+void* dlmalloc(size_t bytes) DLTHROW {
     /*
       Basic algorithm:
       If a small request (< 256 bytes minus per-chunk overhead):
@@ -4668,7 +4676,7 @@ void* dlmalloc(size_t bytes) {
     return gm->_malloc(bytes);
 }
 
-void dlfree(void* mem) {
+void dlfree(void* mem) DLTHROW {
     /*
       Consolidate freed chunks with preceeding or succeeding bordering
       free chunks, if they exist, and then place in a bin.  Intermixed
@@ -4690,7 +4698,7 @@ void dlfree(void* mem) {
     }
 }
 
-void* dlcalloc(size_t n_elements, size_t elem_size) {
+void* dlcalloc(size_t n_elements, size_t elem_size) DLTHROW {
     void* mem;
     size_t req = 0;
     if (n_elements != 0) {
@@ -5311,7 +5319,7 @@ void malloc_state::internal_inspect_all(void(*handler)(void *start, void *end,
 
 #if !ONLY_MSPACES
 
-void* dlrealloc(void* oldmem, size_t bytes) {
+void* dlrealloc(void* oldmem, size_t bytes) DLTHROW {
     void* mem = 0;
     if (oldmem == 0) {
         mem = dlmalloc(bytes);
@@ -5394,7 +5402,7 @@ void* dlmemalign(size_t alignment, size_t bytes) {
     return gm->internal_memalign(alignment, bytes);
 }
 
-int dlposix_memalign(void** pp, size_t alignment, size_t bytes) {
+int dlposix_memalign(void** pp, size_t alignment, size_t bytes) DLTHROW {
     void* mem = 0;
     if (alignment == MALLOC_ALIGNMENT)
         mem = dlmalloc(bytes);
@@ -5417,7 +5425,7 @@ int dlposix_memalign(void** pp, size_t alignment, size_t bytes) {
     }
 }
 
-void* dlvalloc(size_t bytes) {
+void* dlvalloc(size_t bytes) DLTHROW {
     size_t pagesz;
     mparams.ensure_initialization();
     pagesz = mparams._page_size;
